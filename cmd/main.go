@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/jellis18/gitops-controller/internal/utils"
 )
@@ -32,7 +33,12 @@ func Run() {
 
 	//TODO: make bette use of channels for graceful shutdown
 	forever := make(chan bool)
-	go utils.SyncGitRepo(ctx, gitApp, dynamicClient)
+	go func() {
+		for {
+			utils.SyncGitRepo(ctx, gitApp, dynamicClient)
+			time.Sleep(30 * time.Second)
+		}
+	}()
 	<-forever
 
 }
