@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"log"
-	"time"
 
 	"github.com/jellis18/gitops-controller/internal/utils"
 )
@@ -29,13 +28,14 @@ func Run() {
 		TargetRevision: "HEAD",
 	}
 
-	clientset, err := utils.GetK8sClient(false)
+	dynamicClient, err := utils.NewDynamicClient(false)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	go utils.SyncGitRepo(ctx, gitApp, clientset)
+	//TODO: make bette use of channels for graceful shutdown
+	forever := make(chan bool)
+	go utils.SyncGitRepo(ctx, gitApp, dynamicClient)
+	<-forever
 
-	log.Println("On to other things...")
-	time.Sleep(120 * time.Second)
 }

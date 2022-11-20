@@ -6,86 +6,19 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"time"
+	"strings"
 
-	v1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
 )
 
-func deploy(ctx context.Context, clientset *kubernetes.Clientset, stream []byte) (*v1.Deployment, error) {
-	var deployment *v1.Deployment
-
-	obj, gKV, _ := scheme.Codecs.UniversalDeserializer().Decode(stream, nil, nil)
-	if gKV.Kind == "Deployment" {
-		deployment = obj.(*v1.Deployment)
-	} else {
-		return nil, fmt.Errorf("unrecognized type %s", gKV.Kind)
-	}
-
-	_, err := clientset.AppsV1().Deployments("default").Get(ctx, deployment.Name, metav1.GetOptions{})
-
-	// if the deployment doesn't exist, create it
-	if err != nil && errors.IsNotFound(err) {
-		log.Printf("Creating deploment %s\n", deployment.Name)
-		depl, err := clientset.AppsV1().Deployments("default").Create(ctx, deployment, metav1.CreateOptions{})
-		if err != nil {
-			return nil, err
-		}
-		return depl, nil
-
-	} else if err != nil {
-		return nil, err
-	}
-
-	// otherwise update it
-	log.Printf("Updating deploment %s\n", deployment.Name)
-	depl, err := clientset.AppsV1().Deployments("default").Update(ctx, deployment, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return depl, nil
-}
-
-func waitForPods(ctx context.Context, clientset *kubernetes.Clientset, deploymentLabels map[string]string, replicaCount int) error {
-	for {
-		validatedLabels, err := labels.ValidatedSelectorFromSet(deploymentLabels)
-		if err != nil {
-			return err
-		}
-
-		pods, err := clientset.CoreV1().Pods("default").List(ctx, metav1.ListOptions{
-			LabelSelector: validatedLabels.String(),
-		})
-		if err != nil {
-			return err
-		}
-
-		podsRunning := 0
-		for _, pod := range pods.Items {
-			if pod.Status.Phase == corev1.PodRunning {
-				podsRunning++
-			}
-		}
-		fmt.Printf("Waiting for pods. (%d/%d) running\n", podsRunning, replicaCount)
-		if podsRunning == replicaCount {
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
-	return nil
-
-}
-
-func GetK8sClient(inCluster bool) (*kubernetes.Clientset, error) {
+func NewDynamicClient(inCluster bool) (dynamic.Interface, error) {
 	var (
 		config *rest.Config
 		err    error
@@ -108,10 +41,61 @@ func GetK8sClient(inCluster bool) (*kubernetes.Clientset, error) {
 	}
 
 	// create the clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := dynamic.NewForConfig(config)
 	if err != nil {
 		return nil, err
 	}
 
 	return clientset, nil
+}
+
+func reconcile(ctx context.Context, dynamicClient dynamic.Interface, objs []unstructured.Unstructured) error {
+	for _, obj := range objs {
+		gvk := obj.GroupVersionKind()
+
+		gvr := schema.GroupVersionResource{
+			Group:    gvk.Group,
+			Version:  gvk.Version,
+			Resource: fmt.Sprintf("%ss", strings.ToLower(gvk.Kind)),
+		}
+
+		targetNamespace := obj.GetNamespace()
+		if targetNamespace == "" {
+			targetNamespace = "default"
+		}
+
+		objName := obj.GetName()
+		if objName == "" {
+			log.Printf("Cannot apply object %s with no name\n", obj.Object)
+			continue
+		}
+
+		resource := dynamicClient.Resource(gvr).Namespace(targetNamespace)
+
+		// TODO: add specific annotation here to let us know which objects we control
+
+		// first try to get resource
+		_, err := resource.Get(ctx, objName, metav1.GetOptions{})
+
+		// if not found, create it
+		if err != nil && errors.IsNotFound(err) {
+			log.Printf("Creating %s: %s in namespace %s\n", gvk.Kind, objName, targetNamespace)
+			_, err = resource.Create(ctx, &obj, metav1.CreateOptions{})
+			if err != nil {
+				return err
+			}
+
+		} else if err != nil {
+			return err
+		}
+
+		// otherwise update it
+		log.Printf("Updating %s: %s in namespace %s\n", gvk.Kind, objName, targetNamespace)
+		_, err = resource.Update(ctx, &obj, metav1.UpdateOptions{})
+		if err != nil {
+			return err
+		}
+
+	}
+	return nil
 }
