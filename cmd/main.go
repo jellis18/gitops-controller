@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/jellis18/gitops-controller/internal/utils"
 )
@@ -11,11 +12,7 @@ func Run() {
 
 	ctx := context.Background()
 
-	//githubToken := os.Getenv("GITHUB_TOKEN")
-	githubToken := "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"
-	if githubToken == "" {
-		log.Fatal("GITHUB_TOKEN environment varialbe is required")
-	}
+	githubToken := os.Getenv("GITHUB_TOKEN")
 
 	githubClient := utils.GetGithubClient(ctx, githubToken)
 

@@ -84,6 +84,7 @@ func reconcile(ctx context.Context, dynamicClient dynamic.Interface, objs []unst
 			if err != nil {
 				return err
 			}
+			return nil
 
 		} else if err != nil {
 			return err
