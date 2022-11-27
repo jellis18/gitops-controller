@@ -1,0 +1,143 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.9.2
+  creationTimestamp: null
+  name: applications.gitops.jellis18.gitopscontroller.io
+spec:
+  group: gitops.jellis18.gitopscontroller.io
+  names:
+    kind: Application
+    listKind: ApplicationList
+    plural: applications
+    singular: application
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.sync.syncStatus
+      name: status
+      type: string
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: Application is the Schema for the applications API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ApplicationSpec defines the desired state of Application
+            properties:
+              source:
+                description: Reference to the location of the applications manifests
+                properties:
+                  path:
+                    description: Path is the directory within the Git repository where
+                      your manifest(s) live(s)
+                    type: string
+                  repoURL:
+                    description: URL to the git repository that contains the application
+                      manifests
+                    type: string
+                  targetRevision:
+                    description: Defines the revision of the source to the sync the
+                      application to. This can be a git commit, tag or branch. If
+                      empty will default to HEAD
+                    type: string
+                required:
+                - path
+                - repoURL
+                type: object
+              syncPeriod:
+                description: Time in between sync attempts in minutes. Defaults to
+                  3.
+                format: int32
+                minimum: 1
+                type: integer
+            required:
+            - source
+            type: object
+          status:
+            description: ApplicationStatus defines the observed state of Application
+            properties:
+              reconciledAt:
+                description: Time indicating last time application state was reconciled
+                format: date-time
+                type: string
+              resources:
+                description: List of k8s resources managed by this application
+                items:
+                  description: Resource holds the current information about a k8s
+                    resource
+                  properties:
+                    group:
+                      type: string
+                    kind:
+                      type: string
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                    status:
+                      description: 'Current status compared to git repository Valid
+                        values are: - "Unknown"; - "Synced"; - "OutOfSync"'
+                      type: string
+                    version:
+                      type: string
+                  type: object
+                type: array
+              sync:
+                description: Information about sync
+                properties:
+                  source:
+                    description: ApplicationSource contains all required information
+                      about the (git) source of the application
+                    properties:
+                      path:
+                        description: Path is the directory within the Git repository
+                          where your manifest(s) live(s)
+                        type: string
+                      repoURL:
+                        description: URL to the git repository that contains the application
+                          manifests
+                        type: string
+                      targetRevision:
+                        description: Defines the revision of the source to the sync
+                          the application to. This can be a git commit, tag or branch.
+                          If empty will default to HEAD
+                        type: string
+                    required:
+                    - path
+                    - repoURL
+                    type: object
+                  syncStatus:
+                    description: SyncStatusCode is a type representing possible comparison/sync
+                      states
+                    type: string
+                required:
+                - source
+                - syncStatus
+                type: object
+              syncedAt:
+                description: Time indicating lst time application was synced
+                format: date-time
+                type: string
+            required:
+            - sync
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,0 +1,16 @@
+apiVersion: gitops.jellis18.gitopscontroller.io/v1
+kind: Application
+metadata:
+  labels:
+    app.kubernetes.io/name: application
+    app.kubernetes.io/instance: application-sample
+    app.kubernetes.io/part-of: gitops-controller
+    app.kuberentes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: gitops-controller
+  name: application-sample
+spec:
+  source:
+    repoURL: https://github.com/jellis18/go-kubernetest-deploy.git
+    path: app
+    targetRevision: main
+  syncPeriod: 3
