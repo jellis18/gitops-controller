@@ -162,17 +162,23 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			}
 		}
 	}
+
+	// 4. Remove orphans
+	if err := r.findAndDeleteOrphans(ctx, &app, resourceList); err != nil {
+		log.Error(err, "could not delete orphans")
+		return ctrl.Result{}, err
+	}
+
 	// should really wait for these to be synced but for now just add to the resource list
 	app.Status.SyncedAt = &metav1.Time{Time: time.Now()}
 	app.Status.ReconciledAt = &metav1.Time{Time: time.Now()}
 	app.Status.Resources = resourceList
 	app.Status.Sync = gitopsv1.SyncStatus{SyncStatus: gitopsv1.SyncStatusSynced, Source: app.Spec.Source}
-	if err := r.Update(ctx, &app); err != nil {
+	log.Info("Updating Application status")
+	if err := r.Status().Update(ctx, &app); err != nil {
 		log.Error(err, fmt.Sprintf("could not update application %s", app.Name))
 		return ctrl.Result{}, err
 	}
-
-	// 5. Remove orphans
 
 	// determine time for next sync and requeue with delay
 	if app.Spec.SyncPeriodMinutes == nil {
@@ -203,6 +209,55 @@ func (r *ApplicationReconciler) deleteManagedResources(ctx context.Context, app 
 		log.Info(fmt.Sprintf("deleting %s: %s in namespace %s", managedResource.Kind, managedResource.Name, managedResource.Namespace))
 		if err := r.Delete(ctx, u); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func (r *ApplicationReconciler) findAndDeleteOrphans(ctx context.Context, app *gitopsv1.Application, targetResourceList []gitopsv1.Resource) error {
+	log := log.FromContext(ctx)
+
+	// get mapping for target resources
+	type key struct{ name, namespace, group, version, kind string }
+	targetResourceMapping := make(map[key]gitopsv1.Resource)
+	for _, resource := range targetResourceList {
+		targetResourceMapping[key{
+			name:      resource.Name,
+			namespace: resource.Namespace,
+			group:     resource.Group,
+			version:   resource.Version,
+			kind:      resource.Kind,
+		}] = resource
+	}
+
+	// remove orphans by looping over current managed resources and finding those that are not in the target resources
+	for _, managedResource := range app.Status.Resources {
+		_, ok := targetResourceMapping[key{
+			name:      managedResource.Name,
+			namespace: managedResource.Namespace,
+			group:     managedResource.Group,
+			version:   managedResource.Version,
+			kind:      managedResource.Kind,
+		}]
+		// if this resource is not in the target list, it is an orphan, delete it
+		if !ok {
+			gvk := schema.GroupVersionKind{
+				Group:   managedResource.Group,
+				Version: managedResource.Version,
+				Kind:    managedResource.Kind,
+			}
+
+			u := &unstructured.Unstructured{}
+			u.SetGroupVersionKind(gvk)
+			if err := r.Get(ctx, client.ObjectKey{Namespace: managedResource.Namespace, Name: managedResource.Name}, u); client.IgnoreNotFound(err) != nil {
+				return err
+			}
+
+			log.Info(fmt.Sprintf("deleting %s: %s in namespace %s", managedResource.Kind, managedResource.Name, managedResource.Namespace))
+			if err := r.Delete(ctx, u); err != nil {
+				return err
+			}
+
 		}
 	}
 	return nil

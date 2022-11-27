@@ -90,10 +90,9 @@ func main() {
 	}
 
 	if err = (&controllers.ApplicationReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-		//StateManager: controllers.NewAppStateManager(os.Getenv("GITHUB_TOKEN")),
-		StateManager: controllers.NewAppStateManager("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"),
+		Client:       mgr.GetClient(),
+		Scheme:       mgr.GetScheme(),
+		StateManager: controllers.NewAppStateManager(os.Getenv("GITHUB_TOKEN")),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Application")
 		os.Exit(1)
