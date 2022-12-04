@@ -52,10 +52,9 @@ type ApplicationReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the Application object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
+//
+// This is a simple reconciler that will always re-sync the application to the desired state in git on a change
+// It will detect orphans (i.e. k8s resources that are live in the cluster but no longer in the target git repo)
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.13.0/pkg/reconcile
@@ -75,7 +74,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if !controllerutil.ContainsFinalizer(&app, finalizerName) {
 			controllerutil.AddFinalizer(&app, finalizerName)
 			app.Status.ReconciledAt = &metav1.Time{Time: time.Now()}
-			if err := r.Update(ctx, &app); err != nil {
+			if err := r.Status().Update(ctx, &app); err != nil {
 				log.Error(err, "could not update application", "app", app)
 				return ctrl.Result{}, err
 			}
@@ -92,7 +91,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 			controllerutil.RemoveFinalizer(&app, finalizerName)
 			app.Status.ReconciledAt = &metav1.Time{Time: time.Now()}
-			if err := r.Update(ctx, &app); err != nil {
+			if err := r.Status().Update(ctx, &app); err != nil {
 				log.Error(err, "could not update application", "app", app)
 				return ctrl.Result{}, err
 			}
@@ -110,21 +109,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// 2. Get live state using GVK from target objects
-	// var liveObjs []*unstructured.Unstructured
-	// for _, target := range targetObjs {
-	// 	u := &unstructured.Unstructured{}
-	// 	u.SetGroupVersionKind(target.GroupVersionKind())
-	// 	if err := r.Get(ctx, client.ObjectKey{Namespace: target.GetNamespace(), Name: target.GetName()}, u); client.IgnoreNotFound(err) != nil {
-	// 		log.Error(err, "could not fetch live object corresponding to target object", "target", target)
-	// 		return ctrl.Result{}, err
-	// 	}
-	// 	liveObjs = append(liveObjs, u)
-	// }
-
-	// 3. Get tracked object metadata from status (for orphans)
-
-	// 4. Create or update (for now don't worry about checking status)
+	// 2. Create or update (for now don't worry about checking status)
 	var resourceList []gitopsv1.Resource
 	for _, target := range targetObjs {
 		u := &unstructured.Unstructured{}
