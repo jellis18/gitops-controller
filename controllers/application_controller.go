@@ -102,6 +102,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// 1. Get target Objects from repo
+	// TODO: set statemanager from from secrets and don't keep as part of reconciler struct
 	targetObjs, err := r.StateManager.getRepoObjs(ctx, &app)
 	if err != nil {
 		log.Error(err, "could not fetch k8s resources from git repo")
