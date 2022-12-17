@@ -46,6 +46,11 @@ spec:
                     description: Path is the directory within the Git repository where
                       your manifest(s) live(s)
                     type: string
+                  repoSecret:
+                    description: Name of secret that contains Github API token This
+                      secret should have stringData with apiToken field If using a
+                      public repository this is not needed
+                    type: string
                   repoURL:
                     description: URL to the git repository that contains the application
                       manifests
@@ -107,6 +112,11 @@ spec:
                       path:
                         description: Path is the directory within the Git repository
                           where your manifest(s) live(s)
+                        type: string
+                      repoSecret:
+                        description: Name of secret that contains Github API token
+                          This secret should have stringData with apiToken field If
+                          using a public repository this is not needed
                         type: string
                       repoURL:
                         description: URL to the git repository that contains the application

@@ -13,4 +13,5 @@ spec:
     repoURL: https://github.com/jellis18/go-kubernetest-deploy.git
     path: app
     targetRevision: main
+    repoSecret: repo-secret
   syncPeriod: 3

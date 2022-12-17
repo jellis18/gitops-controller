@@ -82,6 +82,12 @@ type ApplicationSource struct {
 	// If empty will default to HEAD
 	// +optional
 	TargetRevision string `json:"targetRevision,omitempty"`
+
+	// Name of secret that contains Github API token
+	// This secret should have stringData with apiToken field
+	// If using a public repository this is not needed
+	// +optional
+	RepoSecret string `json:"repoSecret,omitempty"`
 }
 
 // SyncStatusCode is a type representing possible comparison/sync states

@@ -21,11 +21,13 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -35,14 +37,14 @@ import (
 )
 
 const (
-	finalizerName string = "gitops.jellis18.gitopscontroller.io/finalizer"
+	finalizerName     string = "gitops.jellis18.gitopscontroller.io/finalizer"
+	apiTokenSecretKey string = "apiToken"
 )
 
 // ApplicationReconciler reconciles a Application object
 type ApplicationReconciler struct {
 	client.Client
-	Scheme       *runtime.Scheme
-	StateManager *AppStateManager
+	Scheme *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=gitops.jellis18.gitopscontroller.io,resources=applications,verbs=get;list;watch;create;update;patch;delete
@@ -74,7 +76,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if !controllerutil.ContainsFinalizer(&app, finalizerName) {
 			controllerutil.AddFinalizer(&app, finalizerName)
 			app.Status.ReconciledAt = &metav1.Time{Time: time.Now()}
-			if err := r.Status().Update(ctx, &app); err != nil {
+			if err := r.Update(ctx, &app); err != nil {
 				log.Error(err, "could not update application", "app", app)
 				return ctrl.Result{}, err
 			}
@@ -91,7 +93,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 			controllerutil.RemoveFinalizer(&app, finalizerName)
 			app.Status.ReconciledAt = &metav1.Time{Time: time.Now()}
-			if err := r.Status().Update(ctx, &app); err != nil {
+			if err := r.Update(ctx, &app); err != nil {
 				log.Error(err, "could not update application", "app", app)
 				return ctrl.Result{}, err
 			}
@@ -101,9 +103,27 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
+	// find secret and get api token and initialize state manager
+	secretName := app.Spec.Source.RepoSecret
+	var stateManager *AppStateManager
+	if secretName != "" {
+		var repoSecret corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: app.Namespace}, &repoSecret); err != nil {
+			log.Error(err, fmt.Sprintf("could not find secret %s", secretName), "app", app)
+			return ctrl.Result{}, err
+		}
+		apiTokenBytes, ok := repoSecret.Data[apiTokenSecretKey]
+		if !ok {
+			err := fmt.Errorf("could not access secret data; %s from secret %s", apiTokenSecretKey, repoSecret.Name)
+			log.Error(err, "error reading data from secret")
+		}
+		stateManager = NewAppStateManager(string(apiTokenBytes))
+	} else {
+		stateManager = NewAppStateManager("")
+	}
+
 	// 1. Get target Objects from repo
-	// TODO: set statemanager from from secrets and don't keep as part of reconciler struct
-	targetObjs, err := r.StateManager.getRepoObjs(ctx, &app)
+	targetObjs, err := stateManager.getRepoObjs(ctx, &app)
 	if err != nil {
 		log.Error(err, "could not fetch k8s resources from git repo")
 		// TODO: should retry with some limit but we will just return for now
