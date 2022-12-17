@@ -103,26 +103,13 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// find secret and get api token and initialize state manager
-	secretName := app.Spec.Source.RepoSecret
-	var stateManager *AppStateManager
-	if secretName != "" {
-		var repoSecret corev1.Secret
-		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: app.Namespace}, &repoSecret); err != nil {
-			log.Error(err, fmt.Sprintf("could not find secret %s", secretName), "app", app)
-			return ctrl.Result{}, err
-		}
-		apiTokenBytes, ok := repoSecret.Data[apiTokenSecretKey]
-		if !ok {
-			err := fmt.Errorf("could not access secret data; %s from secret %s", apiTokenSecretKey, repoSecret.Name)
-			log.Error(err, "error reading data from secret")
-		}
-		stateManager = NewAppStateManager(string(apiTokenBytes))
-	} else {
-		stateManager = NewAppStateManager("")
+	// 1. Get target Objects from repo
+	stateManager, err := r.getAppStateManager(ctx, &app)
+	if err != nil {
+		log.Error(err, "Error creating state manager")
+		return ctrl.Result{}, err
 	}
 
-	// 1. Get target Objects from repo
 	targetObjs, err := stateManager.getRepoObjs(ctx, &app)
 	if err != nil {
 		log.Error(err, "could not fetch k8s resources from git repo")
@@ -267,6 +254,26 @@ func (r *ApplicationReconciler) findAndDeleteOrphans(ctx context.Context, app *g
 		}
 	}
 	return nil
+}
+
+// Find secret, get api token and initialize state manager
+func (r *ApplicationReconciler) getAppStateManager(ctx context.Context, app *gitopsv1.Application) (*AppStateManager, error) {
+	secretName := app.Spec.Source.RepoSecret
+	var stateManager *AppStateManager
+	if secretName != "" {
+		var repoSecret corev1.Secret
+		if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: app.Namespace}, &repoSecret); err != nil {
+			return nil, fmt.Errorf("could not find secret %s", secretName)
+		}
+		apiTokenBytes, ok := repoSecret.Data[apiTokenSecretKey]
+		if !ok {
+			return nil, fmt.Errorf("could not access secret data; %s from secret %s", apiTokenSecretKey, repoSecret.Name)
+		}
+		stateManager = NewAppStateManager(string(apiTokenBytes))
+	} else {
+		stateManager = NewAppStateManager("")
+	}
+	return stateManager, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
