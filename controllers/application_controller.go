@@ -86,7 +86,7 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if controllerutil.ContainsFinalizer(&app, finalizerName) {
 			// delete target managed resources
 			log.Info(fmt.Sprintf("Deleting managed resources for app %s", app.Name))
-			if err := r.deleteManagedResources(ctx, &app); err != nil {
+			if err := r.deleteResources(ctx, app.Status.Resources); err != nil {
 				log.Error(err, "could not delete managed resources")
 				return ctrl.Result{}, err
 			}
@@ -157,7 +157,8 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// 4. Remove orphans
-	if err := r.findAndDeleteOrphans(ctx, &app, resourceList); err != nil {
+	orphans := r.findOrphans(&app, resourceList)
+	if err := r.deleteResources(ctx, orphans); err != nil {
 		log.Error(err, "could not delete orphans")
 		return ctrl.Result{}, err
 	}
@@ -184,22 +185,22 @@ func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: nextRun}, nil
 }
 
-func (r *ApplicationReconciler) deleteManagedResources(ctx context.Context, app *gitopsv1.Application) error {
+func (r *ApplicationReconciler) deleteResources(ctx context.Context, resources []gitopsv1.Resource) error {
 	log := log.FromContext(ctx)
 
-	for _, managedResource := range app.Status.Resources {
+	for _, resource := range resources {
 		gvk := schema.GroupVersionKind{
-			Group:   managedResource.Group,
-			Version: managedResource.Version,
-			Kind:    managedResource.Kind,
+			Group:   resource.Group,
+			Version: resource.Version,
+			Kind:    resource.Kind,
 		}
 
 		u := &unstructured.Unstructured{}
 		u.SetGroupVersionKind(gvk)
-		if err := r.Get(ctx, client.ObjectKey{Namespace: managedResource.Namespace, Name: managedResource.Name}, u); client.IgnoreNotFound(err) != nil {
+		if err := r.Get(ctx, client.ObjectKey{Namespace: resource.Namespace, Name: resource.Name}, u); client.IgnoreNotFound(err) != nil {
 			return err
 		}
-		log.Info(fmt.Sprintf("deleting %s: %s in namespace %s", managedResource.Kind, managedResource.Name, managedResource.Namespace))
+		log.Info(fmt.Sprintf("deleting %s: %s in namespace %s", resource.Kind, resource.Name, resource.Namespace))
 		if err := r.Delete(ctx, u); err != nil {
 			return err
 		}
@@ -207,8 +208,9 @@ func (r *ApplicationReconciler) deleteManagedResources(ctx context.Context, app 
 	return nil
 }
 
-func (r *ApplicationReconciler) findAndDeleteOrphans(ctx context.Context, app *gitopsv1.Application, targetResourceList []gitopsv1.Resource) error {
-	log := log.FromContext(ctx)
+func (r *ApplicationReconciler) findOrphans(app *gitopsv1.Application, targetResourceList []gitopsv1.Resource) []gitopsv1.Resource {
+
+	resources := []gitopsv1.Resource{}
 
 	// get mapping for target resources
 	type key struct{ name, namespace, group, version, kind string }
@@ -234,26 +236,10 @@ func (r *ApplicationReconciler) findAndDeleteOrphans(ctx context.Context, app *g
 		}]
 		// if this resource is not in the target list, it is an orphan, delete it
 		if !ok {
-			gvk := schema.GroupVersionKind{
-				Group:   managedResource.Group,
-				Version: managedResource.Version,
-				Kind:    managedResource.Kind,
-			}
-
-			u := &unstructured.Unstructured{}
-			u.SetGroupVersionKind(gvk)
-			if err := r.Get(ctx, client.ObjectKey{Namespace: managedResource.Namespace, Name: managedResource.Name}, u); client.IgnoreNotFound(err) != nil {
-				return err
-			}
-
-			log.Info(fmt.Sprintf("deleting %s: %s in namespace %s", managedResource.Kind, managedResource.Name, managedResource.Namespace))
-			if err := r.Delete(ctx, u); err != nil {
-				return err
-			}
-
+			resources = append(resources, managedResource)
 		}
 	}
-	return nil
+	return resources
 }
 
 // Find secret, get api token and initialize state manager
